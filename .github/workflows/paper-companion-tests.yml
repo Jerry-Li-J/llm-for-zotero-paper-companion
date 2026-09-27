@@ -1,0 +1,17 @@
+name: Paper Companion local tests
+on:
+  push:
+    branches: [paper-companion]
+  pull_request:
+    branches: [paper-companion]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test paper-companion/test-core.cjs paper-companion/test-adapter.cjs paper-companion/test-quota.cjs paper-companion/test-obsidian.cjs paper-companion/test-obsidian-ui.cjs

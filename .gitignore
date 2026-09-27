@@ -44,3 +44,13 @@ superpowers/
 # Local documentation at any directory depth
 doc/
 docs/
+
+# Paper Companion local artifacts and private data (2026-09-27)
+paper-companion/.cache/
+dist-paper-companion/
+__pycache__/
+*.pyc
+qin-paper-companion/
+auth.json
+credentials.json
+*.sqlite
