@@ -1,11 +1,12 @@
 # Build and verify Paper Companion
 
-Base: upstream v3.9.8 (`53b826511bb8510c55d5bbadb94465ca36637457`). Public enhancement: 3.9.8.8. Python 3.10+ and Node.js 22+ are recommended.
+Base: upstream v3.9.8 (`53b826511bb8510c55d5bbadb94465ca36637457`). Public enhancement: 3.9.8.9. Python 3.10+ and Node.js 22+ are recommended.
 
 ## 1. Local enhancement tests (no model requests)
 
 ```sh
 node --test paper-companion/test-core.cjs paper-companion/test-adapter.cjs paper-companion/test-quota.cjs paper-companion/test-obsidian.cjs paper-companion/test-obsidian-ui.cjs
+node --test paper-companion/test-models.cjs
 ```
 
 The nested package.json declares CommonJS only for the small enhancement tests. The original root package remains an ES module package.
@@ -21,7 +22,7 @@ On first use the script downloads the pinned **public upstream XPI** from its of
 
 `17fe311c52f9a0bc11e97d279a6cf7d665cfd6e52b3aca768a0ba0b8ea512bbe`
 
-You can instead place that official file at `paper-companion/.cache/llm-for-zotero-3.9.8.xpi`. Output is `dist-paper-companion/llm-for-zotero-3.9.8.8-paper-companion-review.xpi`, plus `build-info.json` and the generated bundle. Archive entry order/timestamps are fixed. Installing and model inference are never part of this build command.
+You can instead place that official file at `paper-companion/.cache/llm-for-zotero-3.9.8.xpi`. Output is `dist-paper-companion/llm-for-zotero-3.9.8.9-paper-companion-review.xpi`, plus `build-info.json` and the generated bundle. Archive entry order/timestamps are fixed. Installing and model inference are never part of this build command.
 
 ## 3. Build the upstream base from editable source
 

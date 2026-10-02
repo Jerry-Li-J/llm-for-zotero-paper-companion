@@ -8,6 +8,7 @@ function fixture({cached=false,models=['gpt-5.6-sol','gpt-5.6-luna','gpt-5.5','g
   class Element {
     constructor(tag){this.tag=tag;this.children=[];this.style={};this.dataset={};this.events={};this.textContent='';this.value='';this.isConnected=true;nodes.push(this);}
     append(...x){this.children.push(...x);} prepend(...x){this.children.unshift(...x);}
+    replaceChildren(...x){this.children=[...x];}
     setAttribute(k,v){this[k]=v;} addEventListener(k,v){this.events[k]=v;} remove(){this.isConnected=false;}
     get options(){return this.children;} getClientRects(){return [1];}
   }
@@ -29,8 +30,8 @@ function fixture({cached=false,models=['gpt-5.6-sol','gpt-5.6-luna','gpt-5.5','g
     const opts=ctx.qinWrapQuestion({body,item:{id:99},question,model:'gpt-6-astra'});sent.push(opts);
     history.get(99).push({role:'assistant',text:question.includes('建立论文背景')?'dossier\n【全文建档完成】':'translation',streaming:false});
   }};
-  ctx.qinAttach(body,deps);
-  return {sent,writes,ctx,body,input,prefs,nodes,history,deps,obsidian,setPending:value=>{pending=value;},isPending:()=>pending,tick:()=>timers.shift()(),click:prefix=>{const n=nodes.find(n=>n.tag==='button'&&n.textContent.startsWith(prefix));assert(n,prefix);return n.events.click();},select:(role,value)=>{const n=nodes.find(n=>n.tag==='select'&&n['aria-label']===role);n.value=value;n.events.change();},noSelection:()=>{hasSelection=false;},switchPaper:()=>{active={...attachment,id:43,key:'EFGH5678'};}};
+  const dispose=ctx.qinAttach(body,deps);
+  return {sent,writes,ctx,body,input,prefs,nodes,history,deps,obsidian,dispose,setModels:value=>{models=value;},setPending:value=>{pending=value;},isPending:()=>pending,tick:()=>timers.shift()(),click:prefix=>{const n=nodes.find(n=>n.tag==='button'&&n.textContent.startsWith(prefix));assert(n,prefix);return n.events.click();},select:(role,value)=>{const n=nodes.find(n=>n.tag==='select'&&n['aria-label']===role);n.value=value;n.events.change();},noSelection:()=>{hasSelection=false;},switchPaper:()=>{active={...attachment,id:43,key:'EFGH5678'};}};
 }
 
 test('Obsidian organizing without dossier uses Luna and stop works without a dossier',async()=>{
@@ -53,6 +54,36 @@ test('opening unstudied PDF never sends a model request, even with old auto pref
 });
 test('restoring cached dossier and changing models are local-only',async()=>{
   const f=fixture({cached:true});await f.tick();f.select('翻译模型','gpt-5.5');await f.click('刷新可用模型');assert.equal(f.sent.length,0);
+});
+test('opening the panel fills all task selectors from runtime catalog without inference',async()=>{
+  const f=fixture({models:['new-model-not-in-plugin','another-new-model']});
+  await f.tick();
+  const selects=f.nodes.filter(n=>n.tag==='select');
+  assert.equal(selects.length,3);
+  for(const s of selects) assert(s.options.some(o=>o.value==='new-model-not-in-plugin'));
+  assert.equal(f.sent.length,0);assert.equal(f.writes.length,0);
+});
+test('automatic and manual refresh add new models, remove obsolete choices, and preserve explicit selection',async()=>{
+  const f=fixture({models:['old-model','keep-model']});await f.tick();f.select('翻译模型','keep-model');
+  f.setModels(['keep-model','future-model']);await f.tick();
+  const select=f.nodes.find(n=>n.tag==='select'&&n['aria-label']==='翻译模型');
+  assert.equal(select.value,'keep-model');assert(!select.options.some(o=>o.value==='old-model'));
+  assert(select.options.some(o=>o.value==='future-model'));
+  f.setModels(['future-model']);await f.click('刷新可用模型');
+  assert.equal(select.value,'keep-model');assert(select.options.find(o=>o.value==='keep-model').disabled);
+  assert.equal(f.prefs.get('extensions.zotero.llmforzotero.qinModel.translate'),'keep-model');assert.equal(f.sent.length,0);
+});
+test('refresh failure shows stale state and blocks inference without silently changing model',async()=>{
+  const f=fixture({cached:true});await f.tick();
+  f.deps.loadModels=async()=>{throw new Error('offline');};await f.click('刷新可用模型');
+  assert(f.nodes.some(n=>n.textContent.includes('旧列表可能过期')));
+  await f.click('翻译选区');assert.equal(f.sent.length,0);
+});
+test('disposed panel ignores a late catalog response',async()=>{
+  const f=fixture();let finish;
+  f.deps.loadModels=()=>new Promise(r=>{finish=r;});const ticking=f.tick();
+  await new Promise(r=>setImmediate(r));f.dispose();finish();await ticking;
+  assert.equal(f.sent.length,0);assert(!f.nodes.some(n=>n.textContent.startsWith('Codex 返回')));
 });
 test('manual read uses Sol and later translation uses Luna with same complete dossier',async()=>{
   const f=fixture();await f.tick();await f.click('开始通读');assert.equal(f.sent.length,1);assert.equal(f.sent[0].model,'gpt-5.6-sol');assert.equal(f.writes.length,1);

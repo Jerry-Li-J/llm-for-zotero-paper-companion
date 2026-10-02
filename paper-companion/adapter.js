@@ -43,6 +43,8 @@ function qinAttach(body, deps) {
   bar.append(notice);
   const quota = qinAttachQuota(bar, doc, deps);
   const settings = doc.createElementNS(ns, 'div'); bar.append(settings);
+  const modelStatus = doc.createElementNS(ns, 'div'); modelStatus.setAttribute('role', 'status');
+  modelStatus.textContent = '模型列表等待同步；仅查询目录，不生成回答。'; settings.append(modelStatus);
   const selectors = {};
   const defaults = { read: 'gpt-5.6-sol', translate: 'gpt-5.6-luna', explain: 'follow' };
   const labels = { read: '通读整理模型', translate: '翻译模型', explain: '解释模型' };
@@ -56,9 +58,8 @@ function qinAttach(body, deps) {
     label.append(doc.createTextNode(labels[role] + '：'));
     const select = doc.createElementNS(ns, 'select'); select.setAttribute('aria-label', labels[role]);
     addOption(select, 'follow', '跟随原聊天栏模型');
-    for (const model of ['gpt-5.5','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']) addOption(select, model, model);
     const value = Zotero.Prefs.get(prefName(role), true) || defaults[role];
-    addOption(select, value, value); select.value = value;
+    addOption(select, value, value + '（待核对）'); select.value = value;
     select.addEventListener('change', () => { Zotero.Prefs.set(prefName(role), select.value, true); refreshLabels(); });
     selectors[role] = select; label.append(select); settings.append(label);
   }
@@ -186,11 +187,11 @@ function qinAttach(body, deps) {
     const itemKey = getConversationKey(deps.item());
     const state = current?.isCurrent() ? current : { convKey: itemKey, isCurrent: () => !disposed && deps.item() && getConversationKey(deps.item()) === itemKey };
     if (qinModelOverrides.has(body) || isRequestPending(state.convKey)) throw new Error('当前回答还未完成，请稍后再试。');
-    // Resolve only account-listed models. Never silently substitute a different model.
+    // The runtime catalog is not an entitlement check. Never silently substitute.
     const model = selectors[role].value === 'follow' ? deps.currentModel() : selectors[role].value;
-    await deps.loadModels();
+    await syncModels();
     if (!state.isCurrent()) throw new Error('论文已切换，未发送。');
-    if (!deps.catalogModels().some(m => m.model === model)) throw new Error(`当前账户未返回模型 ${model}；请刷新列表并自行选择，不会自动改用其他模型。`);
+    if (!deps.catalogModels().some(m => m.model === model)) throw new Error(`当前 Codex 目录未返回模型 ${model}；请刷新列表并自行选择，不会自动改用其他模型。`);
     const profile = deps.entries().find(m => m.model === model);
     if (!profile) throw new Error('无法获取所选模型配置。');
     const dispatch = { convKey: state.convKey, profile, reasoning: buildCodexAppServerReasoningConfig(role === 'translate' ? 'low' : 'medium') };
@@ -222,17 +223,45 @@ function qinAttach(body, deps) {
     explainButton.textContent = `解释选区 · ${name('explain')}`;
   }
   refreshLabels();
+  let modelSync = null, lastModelSignature = '';
+  async function syncModels(force = false) {
+    if (disposed || deps.system() !== 'codex') return;
+    if (modelSync) return modelSync;
+    const task = (async () => {
+      try {
+        const catalog = await deps.loadModels(force);
+        if (disposed) return;
+        const models = deps.catalogModels();
+        if (!models.length) throw new Error('模型目录为空，请检查 Codex 登录与运行程序版本。');
+        const signature = JSON.stringify([models.map(m => [m.model,m.displayName]),Object.values(selectors).map(s=>s.value)]);
+        if (signature !== lastModelSignature) {
+          for (const select of Object.values(selectors)) {
+            const old = select.value;
+            select.replaceChildren();
+            addOption(select, 'follow', '跟随原聊天栏模型');
+            for (const model of models) addOption(select, model.model, model.displayName || model.model);
+            if (old !== 'follow' && !models.some(m => m.model === old)) {
+              addOption(select, old, old + '（目录未列出，请重选）');
+              [...select.options].find(o => o.value === old).disabled = true;
+            }
+            select.value = old;
+          }
+          lastModelSignature = signature;
+        }
+        const stamp = catalog?.fetchedAt ? new Date(catalog.fetchedAt).toLocaleTimeString() : '';
+        modelStatus.textContent = `Codex 返回 ${models.length} 个模型${stamp ? ' · 查询于 '+stamp : ''}。每 10 分钟自动同步；切换账号后请手动刷新。目录不保证账户可用。`;
+        refreshLabels();
+      } catch (error) {
+        if (!disposed) modelStatus.textContent = '模型同步失败，保留原选择（旧列表可能过期）：' + error.message;
+        throw error;
+      }
+    })();
+    modelSync = task;
+    try { return await task; } finally { if (modelSync === task) modelSync = null; }
+  }
   button('刷新可用模型（不生成回答）', async () => {
-    await deps.loadModels(true);
-    const models = deps.catalogModels();
-    if (!models.length) throw new Error('模型列表读取失败，请检查 Codex 登录。');
-    for (const select of Object.values(selectors)) {
-      const old = select.value;
-      for (const model of models) addOption(select, model.model, model.displayName || model.model);
-      for (const option of select.options) option.disabled = option.value !== 'follow' && !models.some(m => m.model === option.value);
-      select.value = old;
-    }
-    say('已刷新账户可用模型；没有发送论文或生成回答。'); refreshLabels();
+    await syncModels(true);
+    say('已重新查询 Codex 模型目录；没有发送论文或生成回答。');
   });
   button('停止当前回答', () => {
     const key = deps.item() ? getConversationKey(deps.item()) : null;
@@ -272,6 +301,7 @@ function qinAttach(body, deps) {
       if (observedRequest !== null && observedRequest === key && !pending) void quota.afterAnswer();
       observedRequest = pending ? key : null;
       refreshLabels(); obsidian?.refresh(); await ensure();
+      if (!pending && root.isConnected && root.getClientRects().length) await syncModels();
     } catch (e) { say(e.message); }
     if (!disposed) timer = win.setTimeout(tick, 3000);
   }

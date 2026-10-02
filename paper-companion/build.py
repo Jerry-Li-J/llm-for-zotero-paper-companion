@@ -1,6 +1,6 @@
 """Paper Companion public review build. SPDX-License-Identifier: AGPL-3.0-or-later.
 
-Modified by Jerry-Li-J on 2026-09-27. See ../NOTICE.md.
+Modified by Jerry-Li-J on 2026-10-02. See ../NOTICE.md.
 Preserves upstream code and third-party notices. Does not install or call models.
 """
 from pathlib import Path
@@ -25,6 +25,7 @@ if not args.base_xpi and hashlib.sha256(SOURCE.read_bytes()).hexdigest() != '17f
     raise RuntimeError('Original XPI checksum mismatch; refusing to patch.')
 core = (HERE/'core.js').read_text(encoding='utf-8')
 adapter = (HERE/'adapter.js').read_text(encoding='utf-8')
+models = (HERE/'models.js').read_text(encoding='utf-8')
 quota = (HERE/'quota.js').read_text(encoding='utf-8')
 obsidian = (HERE/'obsidian.js').read_text(encoding='utf-8')
 with zipfile.ZipFile(SOURCE) as z:
@@ -32,7 +33,7 @@ with zipfile.ZipFile(SOURCE) as z:
 script_path = 'content/scripts/llmforzotero.js'
 script = files[script_path].decode('utf-8')
 patches = [
-    ('  // src/modules/contextPanel/setupHandlers.ts', core + '\n' + quota + '\n' + obsidian + '\n' + adapter + '\n  // src/modules/contextPanel/setupHandlers.ts'),
+    ('  // src/modules/contextPanel/setupHandlers.ts', core + '\n' + quota + '\n' + obsidian + '\n' + models + '\n' + adapter + '\n  // src/modules/contextPanel/setupHandlers.ts'),
     ('  async function sendQuestion(opts) {', '  async function sendQuestion(opts) {\n    opts = qinWrapQuestion(opts);'),
     ('    doSend = sendFlowController.doSend;', '''    doSend = sendFlowController.doSend;
     panelLifecycle.add(qinAttach(body, {
@@ -40,7 +41,16 @@ patches = [
       raw: resolveLiveRawPanelItem,
       system: getConversationSystem,
       currentModel: () => getCodexRuntimeModelPref(),
-      loadModels: (refresh = false) => { if (refresh) codexModelCatalogStatus = "idle"; return ensureCodexModelCatalogLoaded(); },
+      loadModels: async (refresh = false) => {
+        const codexPath = getConfiguredCodexAppServerBinaryPath();
+        const catalog = await qinLoadModelCatalog(codexPath, refresh);
+        codexModelCatalogModels = catalog.models;
+        codexModelCatalogPath = codexPath;
+        codexModelCatalogStatus = "ready";
+        codexModelCatalogError = "";
+        refreshOpenCodexModelMenu();
+        return catalog;
+      },
       catalogModels: () => codexModelCatalogModels,
       entries: getCodexRuntimeModelEntries,
       selectionTexts: () => getSelectedTextContextEntries(getTextContextConversationKey()).map(e => e.text),
@@ -59,7 +69,7 @@ for old,new in patches:
 files[script_path] = script.encode('utf-8')
 manifest = json.loads(files['manifest.json'])
 manifest['name'] = 'llm-for-zotero · 论文伴读增强（社区审核版）'
-manifest['version'] = '3.9.8.8'
+manifest['version'] = '3.9.8.9'
 manifest['description'] = '本地审核版：手动通读、独立背景术语表、按任务选择模型，打开论文不触发模型请求。'
 # Retain addon ID and preferences for in-place migration; no side-by-side support.
 # Keep this fork's update metadata separate from upstream. Empty metadata means
@@ -69,13 +79,13 @@ manifest['homepage_url'] = 'https://github.com/Jerry-Li-J/llm-for-zotero-paper-c
 files['manifest.json'] = json.dumps(manifest, ensure_ascii=False, indent=2).encode('utf-8')
 files['LICENSE'] = LICENSE.read_bytes()
 files['LOCAL-MODIFICATIONS.txt'] = (ROOT/'NOTICE.md').read_bytes()
-files['SOURCE-CODE.txt'] = b'Corresponding source: https://github.com/Jerry-Li-J/llm-for-zotero-paper-companion/tree/v3.9.8.8-paper-companion\nLicense: AGPL-3.0-or-later. Full upstream source, enhancements, tests and build instructions are included.\n'
-target = OUT/'llm-for-zotero-3.9.8.8-paper-companion-review.xpi'
+files['SOURCE-CODE.txt'] = b'Corresponding source: https://github.com/Jerry-Li-J/llm-for-zotero-paper-companion/tree/v3.9.8.9-paper-companion\nLicense: AGPL-3.0-or-later. Full upstream source, enhancements, tests and build instructions are included.\n'
+target = OUT/'llm-for-zotero-3.9.8.9-paper-companion-review.xpi'
 with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
     for name in sorted(files):
         info = zipfile.ZipInfo(name, date_time=(2026,9,17,0,0,0)); info.compress_type=zipfile.ZIP_DEFLATED
         z.writestr(info, files[name])
 (OUT/'patched-bundle.js').write_text(script,encoding='utf-8')
-report={'upstream':'https://github.com/yilewang/llm-for-zotero/tree/v3.9.8','upstream_commit':'53b826511bb8510c55d5bbadb94465ca36637457','base_kind':'source-built' if args.base_xpi else 'pinned-release','original_sha256':hashlib.sha256(SOURCE.read_bytes()).hexdigest(),'review_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'patch_sites':len(patches),'version':'3.9.8.8','installation_status':'Build only. No local installation or live model request.'}
+report={'upstream':'https://github.com/yilewang/llm-for-zotero/tree/v3.9.8','upstream_commit':'53b826511bb8510c55d5bbadb94465ca36637457','base_kind':'source-built' if args.base_xpi else 'pinned-release','original_sha256':hashlib.sha256(SOURCE.read_bytes()).hexdigest(),'review_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'patch_sites':len(patches),'version':'3.9.8.9','installation_status':'Build only. No local installation or live model request.'}
 (OUT/'build-info.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 print(json.dumps(report,ensure_ascii=False))

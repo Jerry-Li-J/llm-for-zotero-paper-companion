@@ -18,7 +18,9 @@ Public version 3.9.8.8 corrects an early erroneous “MIT” comment in the enha
 The root upstream source and dependency lockfile remain at the pinned base version. The public build script modifies the upstream release bundle at four explicitly checked insertion sites; it refuses missing or ambiguous patch sites. The addon ID and preference namespace remain unchanged for migration, so this build replaces rather than coexists with the upstream plugin.
 
 Corresponding source (including original upstream source, modification source, tests and build instructions):
-https://github.com/Jerry-Li-J/llm-for-zotero-paper-companion/tree/v3.9.8.8-paper-companion
+https://github.com/Jerry-Li-J/llm-for-zotero-paper-companion/tree/v3.9.8.9-paper-companion
+
+2026-10-02, version 3.9.8.9: added models.js and model-catalog tests; modified adapter.js and build.py to load runtime model choices automatically, refresh with a bounded cache and dedicated short-lived process, preserve explicit user selections and report failures without automatic model substitution. Updated documentation and the companion test workflow. No inference is made when querying the catalog; catalog visibility does not prove account entitlement.
 
 Third-party assets include their existing notices, including the Mermaid and provider-icon licenses in `addon/content/`. Dependency licenses remain in the respective packages; the build does not remove them.
 
